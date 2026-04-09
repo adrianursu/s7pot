@@ -1,0 +1,65 @@
+# ─── Logs & Runtime Output ────────────────────────────────────────────────────
+logs/
+*.log
+*.txt
+!README.md   # keep the README if it ever gets a .txt twin
+
+# Specific output files generated during runs
+honeypot_out.txt
+nmap_out.txt
+nmap_debug.txt
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+MANIFEST
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.coveragerc
+
+# mypy / type checkers
+.mypy_cache/
+.dmypy.json
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+# Ignore locally-built image tarballs if ever exported
+*.tar
+
+# ─── Secrets & Sensitive Data ─────────────────────────────────────────────────
+.env*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+creds/
+
+# ─── Editor & OS ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
