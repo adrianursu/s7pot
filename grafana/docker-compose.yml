@@ -1,0 +1,52 @@
+services:
+
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: s7pot_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - s7pot_monitoring
+
+  promtail:
+    image: grafana/promtail:2.9.3
+    container_name: s7pot_promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml
+      # Mount the normalized NDJSON log produced by log_normalizer.py
+      - ../logs:/var/log/s7pot:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - s7pot_monitoring
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: s7pot_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=s7pot
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/s7pot_dashboard.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning
+    depends_on:
+      - loki
+    networks:
+      - s7pot_monitoring
+
+volumes:
+  loki_data:
+  grafana_data:
+
+networks:
+  s7pot_monitoring:
+    driver: bridge

@@ -1,0 +1,110 @@
+services:
+
+  # 
+  # 1. S7pot — ICS Honeypot (Siemens S7-1200 simulation)
+  #    - Applies tc netem 60ms ± 15ms delay on port 102 at boot
+  #    - Requires NET_ADMIN capability for tc to work
+  # 
+  s7pot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: s7pot
+    cap_add:
+      - NET_ADMIN          # required for tc netem
+    ports:
+      - "102:102"          # S7comm / ISO-TSAP
+      - "80:80"            # Siemens TIA Portal web simulation
+      - "161:161/udp"      # SNMP
+    volumes:
+      - ./logs:/app/logs   # shared log directory
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TC_IFACE=eth0      # network interface for tc netem
+    networks:
+      - s7pot_net
+    restart: unless-stopped
+
+  # 
+  # 2. Log Normalizer — converts interaction.json to NDJSON
+  #    Runs continuously, tailing the log file for new events.
+  # 
+  log-normalizer:
+    image: python:3.9-slim
+    container_name: s7pot_normalizer
+    command: >
+      python3 /normalizer/log_normalizer.py
+        --source /logs/interaction.json
+        --output /logs/interaction.ndjson
+    volumes:
+      - ./logs:/logs
+      - ./grafana:/normalizer:ro
+    depends_on:
+      - s7pot
+    networks:
+      - s7pot_net
+    restart: unless-stopped
+
+  # 
+  # 3. Loki — log aggregation backend
+  # 
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: s7pot_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./grafana/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - s7pot_net
+    restart: unless-stopped
+
+  # 
+  # 4. Promtail — log shipper (tails interaction.ndjson  Loki)
+  # 
+  promtail:
+    image: grafana/promtail:2.9.3
+    container_name: s7pot_promtail
+    volumes:
+      - ./grafana/promtail-config.yml:/etc/promtail/config.yml
+      - ./logs:/var/log/s7pot:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - s7pot_net
+    restart: unless-stopped
+
+  # 
+  # 5. Grafana — dashboard UI
+  #    Login: admin / s7pot
+  #    Dashboard auto-loaded from provisioning/
+  # 
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: s7pot_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=s7pot
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/s7pot_dashboard.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - loki
+    networks:
+      - s7pot_net
+    restart: unless-stopped
+
+volumes:
+  loki_data:
+  grafana_data:
+
+networks:
+  s7pot_net:
+    driver: bridge

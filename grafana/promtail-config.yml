@@ -1,0 +1,60 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: s7pot_interactions
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: s7pot
+          honeypot: s7pot
+          __path__: /var/log/s7pot/interaction.ndjson
+
+    pipeline_stages:
+      # Each line is a full JSON object — parse it
+      - json:
+          expressions:
+            timestamp:    timestamp
+            protocol:     protocol
+            intent:       intent
+            details:      details
+            source_ip:    source_ip
+            source:       source
+            path:         path
+            byte_offset:  byte_offset
+            old_value:    old_value
+            new_value:    new_value
+            level_at_esd: level_at_esd
+            reset_level_L: reset_level_L
+            snap7_event_code: snap7_event_code
+            # GeoIP enrichment fields (populated by GEO_ENRICHMENT events)
+            country:      country
+            country_code: country_code
+            city:         city
+            isp:          isp
+            latitude:     latitude
+            longitude:    longitude
+            asn:          asn
+
+      # Promote parsed fields as Loki labels (low-cardinality ones only)
+      - labels:
+          protocol:
+          intent:
+          source_ip:
+          source:
+          country:       # GeoIP: attacker country (e.g. "Germany")
+          latitude:      # GeoIP: for Geomap panel
+          longitude:     # GeoIP: for Geomap panel
+
+      # Use the log's own timestamp instead of ingest time
+      - timestamp:
+          source: timestamp
+          format: Unix
