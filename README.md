@@ -23,7 +23,7 @@ To run the honeypot and observability stack (Grafana/Loki/Promtail) fully docker
 docker-compose up -d --build
 
 # 2. View the telemetry dashboard
-# Open your browser to http://localhost:3000 (username: admin / password: admin)
+# Open the browser to http://localhost:3000 (username: admin / password: s7pot)
 
 # 3. Simulate an attack
 # (Requires Python 3 & python-snap7 on your host)
