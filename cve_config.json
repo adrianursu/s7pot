@@ -1,0 +1,22 @@
+[
+  {
+    "cve_id": "CVE-2021-37185",
+    "title": "S7comm Memory Manipulation — Safety Interlock Bypass",
+    "description": "Writing 1 to DB1 byte 14 bypasses the pump safety interlock, forcing the pump ON regardless of level.",
+    "area": "DB1",
+    "offset": 14,
+    "trigger_val": 1,
+    "consequence": "overflow",
+    "mitre": "T0831"
+  },
+  {
+    "cve_id": "CVE-2022-38465",
+    "title": "Setpoint Manipulation — Silent Alarm Suppression",
+    "description": "Attacker overwrites DB4 high-level alarm threshold, suppressing overflow alarms while manipulating level.",
+    "area": "DB4",
+    "offset": 0,
+    "trigger_val": null,
+    "consequence": "alarm_suppressed",
+    "mitre": "T0836"
+  }
+]

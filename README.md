@@ -4,7 +4,6 @@
 A high-interaction industrial control system (ICS) honeypot that simulates a Siemens S7-1200 PLC running a water treatment process. Built for research and deception, it accurately represents a real production environment. The simulation includes three core services:
 - **S7comm PLC** (port 102): The main controller simulation.
 - **Web Portal** (port 80): A simulated Siemens SIMATIC interface for HTTP reconnaissance.
-- **SNMP Agent** (port 161/udp): A network management node for discovery.
 
 The entire environment is containerized using Docker for easy deployment and streams telemetry to a local Grafana dashboard for full observability.
 

@@ -1,110 +1,178 @@
 services:
 
-  # 
+  # -----------------------------------------------------------------------
   # 1. S7pot — ICS Honeypot (Siemens S7-1200 simulation)
-  #    - Applies tc netem 60ms ± 15ms delay on port 102 at boot
-  #    - Requires NET_ADMIN capability for tc to work
-  # 
+  #    Security hardening:
+  #    - Runs as non-root (s7pot uid) after tc/iptables setup via gosu
+  #    - NET_ADMIN (tc netem + iptables TTL rewrite), SETUID/SETGID (gosu)
+  #    - no-new-privileges prevents SUID escalation
+  #    - Docker default seccomp profile (blocks ptrace, kexec, mount, etc.)
+  #    - read-only root filesystem; only /app/logs is writable (tmpfs option
+  #      available but logs must persist, so named volume used instead)
+  #    - Resource limits: 512 MB RAM, 1 CPU, 256 PIDs
+  # -----------------------------------------------------------------------
   s7pot:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: s7pot
+    cap_drop:
+      - ALL
     cap_add:
-      - NET_ADMIN          # required for tc netem
+      - NET_ADMIN          # tc netem + iptables TTL rewrite + sysctl in entrypoint.sh
+      - SETUID             # gosu needs setuid() to drop from root → s7pot user
+      - SETGID             # gosu needs setgid() / initgroups() for the same drop
+    security_opt:
+      - no-new-privileges:true
+      # Docker's built-in default seccomp profile is used (blocks ~44 dangerous
+      # syscalls incl. ptrace, kexec, mount). A custom profile is omitted because
+      # it must be kept in sync with runc's own /proc access patterns (openat2 etc.)
+      # which change across Docker Desktop versions — the default profile handles this.
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
     ports:
-      - "102:102"          # S7comm / ISO-TSAP
-      - "80:80"            # Siemens TIA Portal web simulation
-      - "161:161/udp"      # SNMP
+      - "102:102"
+      - "80:80"
     volumes:
-      - ./logs:/app/logs   # shared log directory
+      - logs_data:/app/logs    # named volume — not bind-mounted to host path
+    sysctls:
+      # Applied by Docker at container-creation time (before seccomp) so they
+      # take effect even though the default profile blocks runtime sysctl(2).
+      # These make the container's TCP stack look like VxWorks / S7-1200:
+      #   - tcp_sack=0           real S7-1200 does not advertise SACK
+      #   - tcp_timestamps=0     no RFC 1323 timestamps
+      #   - tcp_window_scaling=0 fixed window (8192 B, matching embedded stack)
+      - net.ipv4.tcp_sack=0
+      - net.ipv4.tcp_timestamps=0
+      - net.ipv4.tcp_window_scaling=0
     environment:
       - PYTHONUNBUFFERED=1
-      - TC_IFACE=eth0      # network interface for tc netem
+      - TC_IFACE=eth0
     networks:
-      - s7pot_net
+      - honeypot_net           # isolated from monitoring stack
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 256
 
-  # 
-  # 2. Log Normalizer — converts interaction.json to NDJSON
-  #    Runs continuously, tailing the log file for new events.
-  # 
+  # -----------------------------------------------------------------------
+  # 2. Log Normalizer — JSON → NDJSON converter
+  # -----------------------------------------------------------------------
   log-normalizer:
-    image: python:3.9-slim
+    image: python:3.12-slim
     container_name: s7pot_normalizer
-    command: >
-      python3 /normalizer/log_normalizer.py
-        --source /logs/interaction.json
-        --output /logs/interaction.ndjson
+    command: python3 /normalizer/log_normalizer.py
+               --source /logs/interaction.json
+               --output /logs/interaction.ndjson
     volumes:
-      - ./logs:/logs
+      - logs_data:/logs
       - ./grafana:/normalizer:ro
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
     depends_on:
       - s7pot
     networks:
-      - s7pot_net
+      - monitoring_net
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.25"
 
-  # 
+  # -----------------------------------------------------------------------
   # 3. Loki — log aggregation backend
-  # 
+  #    NOT exposed on host — only reachable inside monitoring_net
+  # -----------------------------------------------------------------------
   loki:
     image: grafana/loki:2.9.3
     container_name: s7pot_loki
-    ports:
-      - "3100:3100"
+    expose:
+      - "3100"             # internal only — no host port binding
     volumes:
-      - ./grafana/loki-config.yml:/etc/loki/local-config.yaml
+      - ./grafana/loki-config.yml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
-      - s7pot_net
+      - monitoring_net
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: "0.5"
 
-  # 
-  # 4. Promtail — log shipper (tails interaction.ndjson  Loki)
-  # 
+  # -----------------------------------------------------------------------
+  # 4. Promtail — ships logs from normalizer → Loki
+  # -----------------------------------------------------------------------
   promtail:
     image: grafana/promtail:2.9.3
     container_name: s7pot_promtail
     volumes:
-      - ./grafana/promtail-config.yml:/etc/promtail/config.yml
-      - ./logs:/var/log/s7pot:ro
+      - ./grafana/promtail-config.yml:/etc/promtail/config.yml:ro
+      - logs_data:/var/log/s7pot:ro
     command: -config.file=/etc/promtail/config.yml
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - loki
     networks:
-      - s7pot_net
+      - monitoring_net
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.25"
 
-  # 
+  # -----------------------------------------------------------------------
   # 5. Grafana — dashboard UI
-  #    Login: admin / s7pot
-  #    Dashboard auto-loaded from provisioning/
-  # 
+  #    Bind only to localhost — access via SSH tunnel or VPN, never exposed
+  #    directly on 0.0.0.0 to the internet.
+  #    Password set via GF_SECURITY_ADMIN_PASSWORD env var — override in
+  #    .env file (not committed).
+  # -----------------------------------------------------------------------
   grafana:
     image: grafana/grafana:10.4.2
     container_name: s7pot_grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"   # localhost only — not internet-facing
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=s7pot
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/s7pot_dashboard.json
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_SECURITY_COOKIE_SECURE=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - loki
     networks:
-      - s7pot_net
+      - monitoring_net
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: "0.5"
 
 volumes:
+  logs_data:       # shared between s7pot, normalizer, promtail
   loki_data:
   grafana_data:
 
 networks:
-  s7pot_net:
+  honeypot_net:
     driver: bridge
+    # s7pot container lives here — isolated from monitoring services
+  monitoring_net:
+    driver: bridge
+    # internal: true is not supported on Docker Desktop for Mac (netns bind issue).
+    # Monitoring stack is still isolated: Loki has no host port, Grafana binds to 127.0.0.1 only.

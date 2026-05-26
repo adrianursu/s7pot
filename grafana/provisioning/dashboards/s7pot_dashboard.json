@@ -1,8 +1,8 @@
 {
-  "title": "S7pot — ICS Honeypot Intelligence",
+  "title": "S7pot \u2014 ICS Honeypot Intelligence",
   "uid": "s7pot-main",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-7d",
@@ -273,10 +273,10 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Attack Timeline — Events per Minute",
+      "title": "Attack Timeline \u2014 Events per Minute",
       "gridPos": {
         "x": 0,
-        "y": 4,
+        "y": 8,
         "w": 24,
         "h": 8
       },
@@ -322,7 +322,7 @@
       "title": "Protocol Distribution Over Time",
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -364,7 +364,7 @@
       "title": "Events by Intent",
       "gridPos": {
         "x": 12,
-        "y": 12,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -402,7 +402,7 @@
       "description": "Source IPs with the most connections.",
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -497,7 +497,7 @@
       "title": "HTTP Requests by Path",
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -570,11 +570,11 @@
     {
       "id": 25,
       "type": "geomap",
-      "title": "🌍 Attacker World Map",
+      "title": "\ud83c\udf0d Attacker World Map",
       "description": "Geographic origin of attackers based on GeoIP enrichment. Populated by real external IPs (private/loopback IPs excluded).",
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 32,
         "w": 16,
         "h": 14
       },
@@ -679,11 +679,11 @@
     {
       "id": 26,
       "type": "table",
-      "title": "🏳️ Attacker Countries",
+      "title": "\ud83c\udff3\ufe0f Attacker Countries",
       "description": "Countries from which attacks originated. Populated by GeoIP enrichment of public IPs.",
       "gridPos": {
         "x": 16,
-        "y": 28,
+        "y": 32,
         "w": 8,
         "h": 14
       },
@@ -781,10 +781,10 @@
     {
       "id": 30,
       "type": "logs",
-      "title": "🔴 Critical Event Stream — Exploits & Alarms",
+      "title": "\ud83d\udd34 Critical Event Stream \u2014 Exploits & Alarms",
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 46,
         "w": 24,
         "h": 10
       },
@@ -812,10 +812,10 @@
     {
       "id": 31,
       "type": "logs",
-      "title": "📋 Full Event Log",
+      "title": "\ud83d\udccb Full Event Log",
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 56,
         "w": 24,
         "h": 10
       },
@@ -837,6 +837,55 @@
           },
           "expr": "{job=\"s7pot\"}",
           "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Unique Connections",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({job=\"s7pot\", intent=\"CONNECTION_DETECTED\"}[$__range]))",
+          "legendFormat": "Connections"
         }
       ]
     }
