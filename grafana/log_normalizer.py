@@ -101,6 +101,11 @@ def tail(source_path: str, output_path: str):
     Continuously tail source_path, appending new objects to output_path.
     On start it does a full back-fill for any events not yet in output.
     """
+    # ── wait for source file to exist ────────────────────────────────────────
+    while not os.path.exists(source_path):
+        print(f"[normalizer] Waiting for {source_path} ...")
+        time.sleep(2)
+
     # ── back-fill on startup ──────────────────────────────────────────────────
     count, last_size = normalize(source_path, output_path)
     print(f"[normalizer] Back-filled {count} events → {output_path}")
